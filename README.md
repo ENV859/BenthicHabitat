@@ -1,2 +1,379 @@
-# BenthicHabitat
-Example of ArcGIS-R bridge in action
+---
+title: Rockfish Habitat Mapping Lab, Carmel Bay, CA
+author: john.fay@duke.edu
+date: Spring, 2017
+---
+[toc]
+
+## Introduction
+Earlier in the semester we took bathymetric data and habitat data and created a benthic complexity layer for Carmel Bay. This week we’ll build upon that effort and explore habitat mapping in the same area. We will focus on mapping potential habitat for Blue Rockfish, an endangered species of fish found off California. Because the sport and commercial fisheries have been shut down off coastal California, many managers are experimenting with Marine Protected Areas. The Carmel Blue Rockfish Conservation Association (CBRCA) is interested in establishing an MPA in the Bay, but they lack the GIS and ecological expertise to plan the best reserve. They have hired you to create a map of blue rockfish habitat for Carmel Bay, and to evaluate whether their proposed MPA’s will do a good job protecting blue rockfish from further exploitation. Rockfish are an extremely long-lived species (100+ years in many cases), and their protection is crucial to their viability.
+
+There are some important considerations with habitat models. The validity and usefulness of potential habitat maps will vary significantly due to differences in our ability to define precise ranges of environmental conditions for a given species. Species which are only found in a very limited range of environmental conditions will provide a more precise model for predicting other potential occurrence sites. On the other hand, species which are found in a wide range of environmental conditions will be difficult to define in a statistical model and will be not be easily differentiated in the final map product.
+
+One important point to keep in mind when deriving any predictive map of potential species habitat is that the current locations of species may be due to a combination of historical interactions involving physiological tolerances of the species, competition between species and disturbance events. The development of an “environmental envelope” describing the current conditions in which a species is found may not reflect the physiological range of the species, but instead only the current range they have been forced to occupy.
+
+Due to the limited inferences which can be ascribed to potential habitat maps, these maps are best used in a conservative manner. One appropriate use of potential habitat maps is to assist in the identification of species occurrences in the water. A map of potential habitat can reduce the area sampled in future field analysis, targeting sites with a higher probability of species occurrence.
+
+## Analysis Summary
+You will do the following:
+
+1.	Prepare the presence and random points that will be used to sample the raster layers
+2.	Sample the raster habitat variables
+3.	Conduct a Logistic Regression GLM in R
+4.	Use the output to create a habitat map in ArcGIS
+5.	Compare the potential MPA sites as to which offers the best protection 
+
+## Data
+The CBRCA tells you what they know about rockfish; they like areas of high benthic complexity. Other than that, the CBRCA doesn’t know exactly the habitat preferences of the blue rockfish. They’ve believe that a few additional layers might be important and these are in the lab08_rockfish_hab_model folder:
+
+1.	Bathymetry (`bath10_8w`)
+2.	Benthic Habitat (`habras10`)
+3.	Benthic Habitat, separated by class (`habras10_1`, `habras10_2`, etc)
+4.	Distance from the shelf break (`brkd10_8w`)
+5.	Distance from kelp beds (`klpd10_8w`)
+6.	A version of benthic complexity (`botc10_8ws`)
+7.	A text file with habitat names for the habras10 raster data (`habras_name.txt`)
+
+Benthic Complexity (`botc10_8ws`) is the neighborhood variety of the zipcode you created in lab 3. 
+
+The CBRCA also has some distribution data on rockfish (`brf_obs.shp`), which they collected during a series of ROV surveys in the Bay (`ROV_TransectN83.shp`). You also have a set of randomly distributed points (`rand_obs.shp`). Random points will be compared statistically to the presence observations to build your model predicting habitat locations. 
+
+The CBRCA provides you with a shapefile of two potential MPAs (`potential_mpa.shp`), and they have asked you to evaluate which of these MPAs is a better choice for implementation. 
+
+## The R Workspace
+You have a folder called “WorkSpace” in this lab’s folder. There you will find the following files to assist in the statistical analysis of your data:
+
+* `BlueRockfish_worksapce.Rproj` - An R-Studio workspace document, similar to an ArcPro `.aprx` file.
+* `BlueRockfishGLM.Rmd` - An R-Markdown document, actually the source of the document you are reading right now.
+* `BlueRockfishGLM_ArcPro.r` - An R script written as an ArcPro geoprocessing script tool.
+
+You may see a few other files (e.g. `.Rhistory`, `.Rdata`) that you need not worry about. There are some R reference cards in the `765_docs\help_notes\R-help folder`. These are useful references on common R commands. It will benefit you to look up the commands you use in this lab. Also, there is a PDF’s discussing the differences between LM (linear models), GLM (General Linear Models) and the Bayesian GLM in the `765_docs\help_notes\habitat_models` folder. Also here are some notes from Dean Urban on habitat models that may help you understand these concepts better. 
+
+
+## I: Generating the environmental sample tables (ArcPro)
+
+### Sampling environmental variables from known rockfish locations
+This is pretty straightforward in ArcGIS. Use the `SAMPLE` tool with the observation points to sample 5 grids mentioned above. The `SAMPLE` tool produces a table (e.g., a `.dbf` file) with the values of each sampled raster listed for every sample point. Run this tool, saving the output as `presence.dbf` in your WorkSpace folder. 
+
+### Sampling environmental variables from 'pseudo-absence' locations
+Our statistical models need to contrast values of known habitat to values at locations where habitat is known *not* to occur. We rarely have that information as it's difficult to confirm absence of a species, so we often generate *pseudo-absence* data by generating a set of random points in our landscape. This can be done easily in ArcPro using the `Generate Random Points` tool. However, so we all analyze the same set of pseudo-absence points, we'll use the `rand_obs.shp` file generated for you. Do the same process as above to sample the environmental rasters, but this time use the `rand_obs.shp` file as the input, and save your output as `random.dbf` in the `Worskpace` folder.
+
+## II: Statistical analysis (R-Studio)
+As mentioned above, the `Workspace` sub-folder in the lab folder contains the R-code to run our statistical analysis. If you R and R-Studio, fear not; this lab will walk you through the necessary steps. If you are familiar with these products, this will be a good review
+
+### Open the R-Studio workspace
+Open the Blue Rockfish R-Studio workspace by double-clicking the `BlueRockfish_workspace.Rroj` file. This will fire up R-Studio were we will interact with our data and R scripts. 
+
+### View the Blue Rockfish R-Markdown document
+R-Markdown contains both formatted text and R-Code. It makes nicely readable reports from your R analyses. This very document is an R-Markdown document converted, or "knitted" into an HTML document. But we'll also use it to execute our analysis. 
+
+Add the document to our R-Studio workspace by navigating the **Files** section in the lower right pane in R-Studio and clicking the `BlueRockfishGLM.Rmd` file. *Or, if you prefer a thinned down document, that is one with much fewer distracting text, you can open the `BlueRockfishGLM_GLM.R` file.
+
+### Install R packages, if necessary
+Many R scripts, including ours, requires loading 3rd party packages. Our script requires the `foreign`, `arm`, and `MASS` packages to be installed on the machine. You can do this in R-Studio by selecting the **Packages** tab in the lower left pane, then click `Install` to open the installer window. From there, type the name of the packages mentioned above, separated by a comma. Be sure `install dependencies` remains checked, and then click `Install`. The packages are retrieved from an online repository and installed for use. 
+
+***
+### -> Start markdown execution here <- 
+
+#### Import libraries
+Next we need to activate those packages. 
+
+***We are now moving to R commands. These commands occur in the grey section of you Rmd file, and you can run these blocks of code by clicking the green triangle on the upper left side of the greyed code block area...***
+
+You may see some red warning when loading these libraries depending on your version of R, but that's ok...
+```{r message=F, warning=F}
+library(foreign)
+library(arm)
+library(MASS)
+```
+
+#### Set input/output parameters
+Set R variables pointing to the input files (created in ArcPro) and the filenames of the output produced by our script. If these files are named something else or places in a different location, you can change these values, just be aware that R uses the opposite slash direction as windows. For example, if your `presence.dbf` file were in the Data folder, the line would be `presence_dbf <- '../Data/Presence.dbf'`.
+```{r}
+#Inputs
+presence_dbf <- 'Presence.dbf' #SAMPLE product of known occurrenced 
+random_dbf <-'Random.dbf'      #SAMPLE product of random points
+
+#Outputs
+mdl3var_file <- 'mdlvar.csv'
+mdlaic_file <- 'mdkaic.csv'
+```
+
+#### Load Data
+These next few steps load the presence and random DBF files, do a bit of formatting to each, and then combine them into a single file, with a `species` column indicating wether the record was from the presence or random dataset.
+
+
+```{r}
+#Read in the two arcGIS SAMPLE results into R data frame objects
+present <- read.dbf(presence_dbf)
+random <- read.dbf(random_dbf)
+```
+
+
+```{r}
+#Drop the first three columns from each (ID, X, and Y fields...)
+present <- present[,c(-1:-3)]
+random <- random[,c(-1:-3)]
+```
+
+
+```{r}
+#Add a "species" column to each, listing presence (1) or absence (0)
+present['species'] = rep(1, nrow(present))
+random['species'] = rep(0, nrow(random))
+```
+
+
+```{r}
+#Bind the two tables into a single table
+sp.pa = rbind(present, random)
+```
+
+
+```{r}
+#Change missing data (-9999) to NA
+sp.pa[sp.pa == -9999] <- 0
+```
+
+#### Examine the data in R
+Let's pause an examine the file we just constructed:
+
+```{r}
+#Show the first 10 rows of data
+sp.pa[1:10,]    
+```
+
+```{r}
+#Take a look at the column names:
+colnames(sp.pa)
+```
+
+```{r}
+#Take a look at the column types with the `str` ("structure") command
+str(sp.pa)
+```
+
+```{r}
+#Show a summary of the data
+summary(sp.pa)
+```
+
+
+#### Convert HabRas from integer to factor
+One of our variables, `habras10` is defined as *numeric*. However, this Habitat Raster should be defined as *categorical* before running the binary regression:
+
+```{r}
+#Use the `class` function to display the type
+class(sp.pa$habras10)
+```
+
+```{r}
+#Change habras10 to 'factor' (categorical)
+sp.pa$habras10 = factor(sp.pa$habras10)
+```
+
+```{r}
+#Now see that its class is defined as `factor`
+class(sp.pa$habras10)	
+```
+
+```{r}
+#See the levels contained in the category
+levels(sp.pa$habras10)    
+```
+*Note this variables now shows a histogram for distribution, rather than parametric stats such as mean, etc*
+
+### Examine pairwise plots of our variables
+Pairwise plots reveal collinearity among predictor variables. If any plots reveal a strong relationship among variable pairs, we would likely want to drop one of them as them as they are effectively redundant:
+```{r pairplot}
+#Look at pairwise plots of variables to examine correlations
+pairs(sp.pa)	
+```
+
+### Running the standard GLM
+Let's pause and consider our data. We are modeling a binary condition - habitat or not habitat - and so we will use a *binomial logistic regression*. This is very different from a *normal* regression, which does not work well at all for this condition. You may have run some normal regressions – such as distance from front vs. number of critters. In those cases, the dependent variable is continuous, not categorical. We use logistic regression, however, when the dependent variable is categorical. The logistic regression in general can be *multinomial* (the dependent variable has multiple categories) or *binomial* (the dependent variable has only two categories). In this case, what you are trying to predict in binary – habitat or not habitat. So in this case, we need a __binomial logistic regression__ model. Binomial logistic regressions are a subset of the General Linear Models (GLM) family. GLM’s are based on linear variables like a ‘Normal’ regression (Linear Model, LM, family), but do not assume that the distribution of the response variable is normal. Note that there are other types of GLM, so saying you are running a GLM is not sufficient to describe what you did.  *Please read the information on this topic in the help notes from Dean Urban’s multivariate class for a more complete explanation.*
+
+Below is the R code to run a standard GLM. Note that it's case sensitive. Also, we assume `habras10` has already been defined as a factor.
+```{r}
+#Run a standard GLM
+mdlglm <- glm(formula = species ~ bath10_8w + botc10_8ws + brkd10_8w + klpd10_8w + habras10, family = binomial(link = "logit"), data = sp.pa)
+```
+
+Look at results:
+```{r}
+#Examine GLM summary
+summary(mdlglm)
+```
+
+The habitat raster (`habras`) has largely negative coefficients (negative correlations are just as valid as positive, but we might expect here that some particular habitat is more likely to be rockfish habitat, a positive coefficient) and essentially no significance at all. This likely is because we do not have enough points in each class and/or that the distribution is all at either end – as 1 or 0. In this case, the GLM Binomial Logistic Regression does not work well. The predicted habitat resulting from this is likely to be poor. This is definitely a problem. If you look at the habitat values for the presence and random points, it’s pretty clear there is a pattern here (and of course you would always have a look at the actual values!). And the biologist tells you that rockfish do in fact prefer certain of the habitats described in the habras data. 
+
+In short, **we need a better model!** 
+
+What we really need are more samples. But, we would always like more samples for a better model. So we have two choices – we toss habitat as a variable, or we look for a better way to use it. In a real scenario, you would do both and compare results. 
+
+*Note: You can run this standard Binomial model using MGET’s Fit GLM tool. You need the finished table brf_pa_combined.csv as the input. You must also define the habras10 as a factor in the equation. However, with MGET, you don’t need to open R at all and it writes out the graphics, the R workspace with all variables saved and the summary. This is shown in the appendix below. However, it does not have a Bayesian version, so our next step can’t be done in MGET.*
+
+We need to run the ‘Bayesian GLM’, which assigns some a priori ‘weights’ base on a default distribution. You don’t have to set the weights; we will accept the defaults and just run the Bayesian GLM function. Interpretation of the BayesGLM is exactly the same as the standard GLM. Run this code and examine the results of the mdlbayes results. Note that in general, you can always just use the Bayesian GLM – it includes the standard GLM as an option, but even so, in cases where the standard GLM works well, Bayesian GLM should work equally well. 
+
+### Running a Bayes GLM
+
+We'll try with a *Bayes* GLM:
+```{r}
+#Run a Bayes GLM
+mdlbayes <- bayesglm(formula = species ~ bath10_8w + botc10_8ws + brkd10_8w + klpd10_8w + habras10, family = binomial(link = "logit"), data = sp.pa)
+mdlbayes
+```
+
+Look at results of the Bayes GLM model
+```{r}
+#Examine the Bayes GLM result
+summary(mdlbayes)
+```
+We now see better results! Our coefficients are not so largely negative and significances are higher and more varied.  Also note the Deviance values. Deviance is a measure of the fit of the model. The Null Deviance is the null case – this is the total deviance if the variables have no effect at all in describing habitat vs. not habitat (intercept only). The residual deviance is how much deviance remains unexplained in your model. Smaller residual deviance is better. The difference between Null and residual deviance is how much deviance is explained by the model. Higher explained deviance is a better model. Thus, one measure of goodness of fit is % deviance explained:
+
+`% deviance explained = ((null – residual)/null) x 100`
+
+This is somewhat analogous to the R-squared of a normal linear regression. 
+
+### Choosing models with AIC
+
+Now use AIC (Akaike's information criterion) to choose a best model. The AIC is a goodness of fit comparison between different models. The lowest AIC score is the ‘best’ model according to this criterion. The AIC runs a sort of a cost/benefit analysis on your model. It compares the deviance explained by the full model using all variables to versions of the model without each specific variable. Explaining more of the deviance is ‘good’, but making the model more complex by adding more variables is ‘bad’. It tries to find the best combination of simplest model and explaining the most deviance. Each combination receives an AIC score, and the lower the score the better the model. It is only a guide – it is not necessarily the perfect answer. In fact, there is no one ‘correct’ model and all others are ‘incorrect’. Since you don’t know the true exact ‘habitat’ of the rockfish (as is usually the case), you can never know exactly which model is best. Thus, you would usually try multiple models and hopefully use them to run another sampling campaign to better define your options. 
+
+Run an AIC analysis on the original model (`mdlglm`):
+```{r}
+#Use AIC to evaluate and chose the best model
+mdlaicglm <- stepAIC(mdlglm, trace=T)
+```
+
+Here, we see the full model has an AIC of 252.89 (as was listed in the summary output of the `mdlglm` run). This is the lowest AIC, as it has the lowest overall residual deviance.  As variables are removed, the AIC increases (that is, model worsens). Based on this, the full model is kept as shown in the summary of the `mdlaicglm`:
+
+```{r}
+#Examine summary of AIC evaluation
+summary(mdlaicglm)
+```
+
+Even though the `habras` data is not at all significant, the AIC keeps it in the model.  However, as discussed earlier, we already know this model has a problem.  AIC does not tell us how well the model fits the data, only a relative test of what variables are most important in the model.  So we still want to do the Bayes GLM. 
+
+Run the stepwise model selection by AIC on the `mdlbayes` binomial regression:
+```{r}
+#Use AIC to evaluate and chose the best model
+mdlaicbayes <- stepAIC(mdlbayes, trace=T)
+```
+
+Here, we see the full model has an AIC of 267.68, as we saw when we ran this earlier.  Removing kelp distance lowers the AIC to 260.13.  Any other removals increase the AIC.  So, by this measure (and remember, this is just one way to measure what is best), a model without kelp distance is best: it explains the most deviance while minimizing model complexity/specificity. 
+
+The summary gives us the AIC model deemed ‘best’, dropping Kelp distance:
+```{r}
+#Examine summary of AIC evaluation
+summary(mdlaicbayes)
+```
+The AIC score of this model, with kelp distance dropped, is actually a bit higher that the model with all 5 variables (273.36 vs. 267.68 of the full model) and different than the 260.13 we saw earlier for dropping Kelp distance. Something is a bit off in some of the code here.  It may be a matter of order – the “stepAIC” command was backward stepwise, and there may be some different defaults with the “summary” command.  
+At any rate, the difference with and without kelp distance is small in terms of the residual deviance – it only goes up from 241.68 to 249.36 when kelp distance is removed, so not a lot of explained deviance is lost (lost information).   So, we can choose either the full 5 term model or the 4 term model without kelp distance.  We will go with the simpler model. But remember, this is just one measure of what is best – you may have reason to believe that kelp distance should be kept anyway!  
+
+You should note that the `habras10` also is not very significant.  *What happens if we remove it?*  
+
+Run the Bayesian GLM script with just bath10_8w, botc10_8ws, and brkd10_8w (mdl3var object in the script).
+```{r}
+#Revise Bayes GLM, dropping kelp distance and habitat rasters
+mdl3var <- bayesglm(formula = species ~ bath10_8w + botc10_8ws + brkd10_8w, family = binomial(link = "logit"), data = sp.pa)
+```
+
+The summary of the model with kelp distance and habitat rasters removed:
+```{r}
+#Examine result
+summary(mdl3var)
+```
+
+The summary results show the coefficients for this is pretty close to the model with `habras10`, but the residual deviance is quite a bit higher and the AIC is *much* higher.  This is why the stepAIC procedure kept the habras10 variable – the reduction in the residual deviance is worth the added complexity of having it in the model.  
+
+Finally, write the coefficients of both models out to *.csv file. And after all code in this Markdown document has been run, find and click the `Knit` button to write the outputs to a HTML file.
+```{r}
+#Write coefficients to output files
+write.csv(summary(mdl3var)$coefficients, file=mdl3var_file)
+write.csv(summary(mdlaicbayes)$coefficients, file=mdlaic_file)
+```
+
+***
+
+## III. Convert the Logistic Regression Results to a Habitat Dataset (ArcPro)
+Now we have enough to make a map in ArcGIS. We’ll do this in three steps:
+
+1.	Use the results from the regression along with the raster inputs to map back out the habitat surface.
+2.	Convert the probabilities from the logit scale (log odds) to a simple probability scale
+3.	Determine a probability threshold – what is/is not ‘habitat’.
+
+### Step 1. Map the cells back out to a geographic surface. 
+Essentially what we have done with the binomial GLM is determine the relationship between rockfish presence and the environment. We use that relationship in conjunction with GIS to find all the cells that satisfy those criteria. These cells will be our habitat. First what we’ll do is find the probability that a given cell in geographic space has the suitable criteria. We do this with the Raster Calculator tool with the following equation.  Examine your results from the GLM using the AIC data to select which variables should be included in your model.  From the summary you wrote out, you can then see the intercept and coefficients to use for those variables to construct an equation.  
+
+Since `habras10` is categorical, this is a long equation. You see from your regression results that each of the 8 classes has its own coefficient.  You need `habras10` broken into 8 separate grids, each representing one class.  You have these grids made for you already `(con(habras10 == 1, 1, 0)`, `con(habras10 == 2, 1, 0)`, and so on…).
+
+`brf_logit_4 (your new output grid) = intercept + (coeff * bath10_8w) + (coeff * botc10_8ws) + (coeff * brkd10_8w) + (coeff * habras10_1) + (coeff * habras10_2) + …` and so on for all 8 habras10 coeff.
+
+You will put in your values for the intercept and the coefficients.  **Do not round the coefficients.**  Remember, the output summary file has the full value – R often shows rounded values in the display. This binomial equation gives us the ‘log odds’ of a given pixel being similar to pixels with a rockfish observation. Log odds, however, is not very easy to interpret.  We can convert this into a probability.  
+
+### Step 2. Convert the Log Odds to a Probability
+These predicted values are then converted into probabilities using the **inverse logistic link** function where `ea+bX` is the exponent of the logistic regression equation (shown here with a single independent variable).
+
+This is done in Raster Calculator using the output from the previous step, e.g.:
+
+
+
+`brf_prob (your new output grid) = (exp(brf_logit)) / (1 + exp(brf_logit))`
+
+### Step 3. Determine a probability cutoff
+Finally, we have a grid of blue rockfish habitat probability that ranges from 0 (0%) to 1 (100%), but you want to show the CBRCA a raster of high probability, e.g. p > 0.5. You can do this with a simple `CON` statement in the Raster Calculator tool.  For now, we will accept this as the threshold, but identifying the best threshold is a whole other issue...
+
+***
+
+## IV. MPA Recommendation
+You need to analyze which proposed MPA would have more of the Blue Rockfish habitat based on the results or you model.  The MPA_ID field is your ID for the two potential MPA’s.  This is a zonal function.   However, there are a few ways to consider this. Do we simply want to know which has more habitat area at the given threshold?  Certainly this is useful information.  But it does not tell the whole story.  One site could have more total area above the threshold, but have a lower average probability overall.  It gets even more complex.  Perhaps we decide the average probability of being habitat should not include pixels that are below the threshold, only those that are >= 50%.  This would give a very different average – one site might have more area >= 50%, but the other might have a higher average probability for the area that is defined as habitat.  Now which is best?  As you can see, you must very carefully consider what ‘best’ means in any given case. For this exercise, we will simply report the area above the threshold.  Our case is rather simple – one site is clearly better than the other.  
+
+***
+
+## V. Deliverables
+
+This is a formal write-up, and should have more detail in description of the data, of your analysis, and of your recommendations. You are writing this for a client (mock though they may be), and you should write this as if you are the GIS expert, and they are a knowledgeable audience. That is, though they lack the GIS expertise you have, they have a great deal of knowledge about the area and about rockfish, and they should be able to understand your description of the analysis. Methods should be a relatively brief description of how you approached the problem, not in GIS-speak, but real words. Concise descriptions of your approach and if you need to list steps, bullet points are useful. Refer to your appendix with the model and script for details. Your write-up should be a complete story that provides some background, the steps you took (& why), the resulting habitat layer, and recommendations for MPA implementation. You need to provide your graphical model and script (in an appendix) so they can reproduce the steps with other species in the future. 
+Note that maps and figures should be in the main write-up, not in the appendix, and in an appropriate order as you discuss them.  All tables, charts and figures should be labeled “Table 1”, “Figure 1” etc. so they can unambiguously referenced.  There should not be any tables or figures that are not referenced in the results and discussion.   
+
+Consider your results.  Explain concisely the Binomial GLM (logistic regression) results – note what the deviance is for your model and what this means.  Include the % deviance explained by your model.  Also be sure you understand what the coefficients are and what a negative vs. positive coefficient means.  
+
+Be sure to explain what the assumptions of the model are and what is the model really giving you – state the null hypothesis.  Your model is not really telling you what is habitat and what is not. What is it literally testing is the probability that a given pixel is like a pixel that had a rockfish in it, using the specific variables we decided were important.  We must then decide what level of probability represents likely habitat.  
+
+In the discussion, explain any problems and ways to test/improve the results.  Note you have ‘random’ data, not ‘absence’ data to compare to ‘presence’ data.  Think about what this difference is – you are comparing fish locations vs. random, not vs. absence.  In particular, what does it mean for a mobile species in a 3-D medium vs. a sessile species (say a fish vs. coral)?  What would the results be if you ran the binomial regression again with the same species points, but different random points?  This would be a very good thing to test – if your results are similar with a variety of different random points, your model is probably a strong one.  If it varies a lot with different random points, then you probably have a problem.  Perhaps you need more rockfish presence data or some different independent variables. Consider carefully the implications of the point data you are using and what it is being used to identify.  
+
+Also briefly compare your 3 and 4 variable Bayesian model. You will see one model predicts much more area as habitat. Why?  What is the key difference that significantly reduces the habitat estimate in the 4 variable model? 
+
+Often, the purpose of a habitat model is to help find more of the species in areas you did not actually take observations.  Your potential habitat map will help narrow where to search, as field work is often difficult and expensive. So the first thing you might look at is did either model of predicted habitat do a good job of capturing the points we know are Rockfish?  If it did not even do well with the points used to make the model, it is very unlikely to do well predicting rockfish locations elsewhere.  Ultimately, the only way to identify which model is better and if either is useful, is an accuracy assessment with a new, independent set of observations.  Be sure you specify which model you choose as the best and used in the process to select the best MPA. 
+
+Note and explain that your model is specific to this dataset and the variables we decided were important.  More or different data (both dependent and independent) could give us different results.
+
+We are not after 10 pages – your write up should be concise and to the point.  If you understand the material, it doesn’t need to be long (rambling on with the hopes of saying something right is not going to make the grader happy).  
+
+You need to include the maps, tables, etc. necessary to make a complete story, but this should include at least the following:
+
+1.	A reference map of the area with the distribution of blue rockfish, distribution of your random points, and the boundaries of the potential MPA’s. 
+
+2.	Map(s) (can be two frames or two separate maps) depicting the probability surface of the 3 and 4 variable Bayesian binomial model.  The color ramp (or classification) should have a clear break at our threshold level.  Include the Rockfish observation points. Also clearly indicate the two potential MPA’s and which site is your recommendation (you still want to see the underlying probability data, so the MPAs should be hollow).
+
+3.	Map(s) (two frames or separate maps) comparing the predicted habitat (habitat or not, the binary condition) at %50 probability for both the 3 and 4 variable models.  Include the Rockfish observation points.  Also, clearly indicate the two potential MPA’s and which site is your recommendation (again, MPA should just show boundary so we can see the habitat layer below).  
+
+4.	Table of the MPA results for the one model you decide is the best. We only need the area and % of total area that is above our threshold. Something like this (be sure you have the MPA ID correct):
+
+MPA ID| MPA Area|Habitat Area(sq m)|% of MPA
+------|---------|------------------|--------
+ 1 | | |						
+ 2 | | |			
+
+5.	Regression results for the two Baysian models (3 and 4 variables).  This should be a cleaned up, easily interpretable version of the summary stats.  Show the coefficients, deviances (including % explained and unexplained) and variable significance in the write-up.  You should also specifically show the equations used to generate the probability surfaces.  All the output details can go in the appendix if there is more than what you put in tables in the main write-up for those readers that want to see them.  
+
+6.	Any other maps, figures, tables you need to effectively and clearly tell your story.  
+
+7.	Include the Model as a graphic and script in an appendix. 
+
+
+
+
+
+
+
+
