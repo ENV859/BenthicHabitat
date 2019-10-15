@@ -1,0 +1,10 @@
+.RData
+.Rhistory
+Workspace/.RProj.user/*
+Workspace/mdkaic.csv
+Workspace/mdlvar.csv
+Data/*
+Index/*
+Rockfish1.gdb
+.Rproj.user
+
